@@ -10,6 +10,7 @@ A powerful bash script to sync commits between two git remotes automatically. Pe
 - **Branch creation**: Asks to create missing branches on remotes
 - **Divergence detection**: Warns when both remotes have unique commits
 - **Preview changes**: Shows commit differences before syncing
+- **Dry-run mode**: Preview what would be synced without making changes
 - **Auto-confirm mode**: Skip confirmations with `-y` flag
 - **Color-coded output**: Easy to read status messages
 - **Safe operations**: Always confirms before pushing
@@ -83,6 +84,9 @@ git-sync-remotes
 # Sync current branch with auto-confirm (no prompts)
 git-sync-remotes -y
 
+# Preview changes without syncing (dry run)
+git-sync-remotes --dry-run
+
 # Sync specific branch
 git-sync-remotes master
 
@@ -93,6 +97,7 @@ git-sync-remotes master origin gitlab
 ### Options
 
 - `-y`, `--yes`: Auto-confirm all prompts (useful for automation)
+- `--dry-run`: Show what would be synced without actually making any changes
 - `[branch-name]`: Specify branch to sync (defaults to current branch)
 - `[remote1] [remote2]`: Specify which remotes to sync (auto-detects if not provided)
 
@@ -140,7 +145,33 @@ Create branch 'feature-branch' on origin? [y/n]: y
 ✓ Branch created and synced to origin
 ```
 
-#### Example 3: Diverged Branches
+#### Example 3: Dry Run Mode
+```bash
+$ git-sync-remotes --dry-run
+ℹ No branch specified, using current branch: main
+ℹ Auto-detecting remotes...
+✓ Detected 2 remotes: origin, gitlab
+==========================================
+Git Remote Sync Tool (DRY RUN)
+==========================================
+
+ℹ Branch: main
+ℹ Remote 1: origin (git@github.com:user/repo.git)
+ℹ Remote 2: gitlab (git@gitlab.com:user/repo.git)
+⚠ DRY RUN MODE: No changes will be made
+
+ℹ Fetching from both remotes...
+✓ Fetched from both remotes
+
+ℹ origin has 3 commit(s) not in gitlab
+ℹ Direction: origin → gitlab
+
+ℹ Would push 3 commit(s) from origin to gitlab
+
+✓ Dry run completed - no changes were made
+```
+
+#### Example 4: Diverged Branches
 ```bash
 $ git-sync-remotes main
 ERROR: DIVERGED: Both remotes have unique commits!

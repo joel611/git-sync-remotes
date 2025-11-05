@@ -3,12 +3,14 @@
 # sync-remotes.sh - Sync commits between two git remotes
 # Usage: git-sync-remotes [options] [branch-name] [remote1 remote2]
 #   -y, --yes: Auto-confirm all prompts
+#   --dry-run: Show what would be synced without actually syncing
 #   If branch is not specified, uses current branch
 #   If remotes are not specified, auto-detects (must have exactly 2 remotes)
 # Examples:
 #   git-sync-remotes                    # Sync current branch, auto-detect remotes
 #   git-sync-remotes master             # Sync master branch, auto-detect remotes
 #   git-sync-remotes -y                 # Sync current branch with auto-confirm
+#   git-sync-remotes --dry-run          # Preview changes without syncing
 #   git-sync-remotes master gitlab origin  # Sync master between gitlab and origin
 
 set -e
@@ -28,6 +30,7 @@ REMOTE1=""
 REMOTE2=""
 BRANCH=""
 AUTO_CONFIRM=false
+DRY_RUN=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -78,9 +81,13 @@ while [[ $# -gt 0 ]]; do
             AUTO_CONFIRM=true
             shift
             ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
         -*)
             print_error "Unknown option: $1"
-            echo "Usage: $0 [-y] [branch-name] [remote1 remote2]"
+            echo "Usage: $0 [-y] [--dry-run] [branch-name] [remote1 remote2]"
             exit 1
             ;;
         *)
@@ -182,12 +189,19 @@ else
 fi
 
 echo "=========================================="
-echo "Git Remote Sync Tool"
+if [ "$DRY_RUN" = true ]; then
+    echo "Git Remote Sync Tool (DRY RUN)"
+else
+    echo "Git Remote Sync Tool"
+fi
 echo "=========================================="
 echo ""
 print_info "Branch: $BRANCH"
 print_info "Remote 1: $REMOTE1 ($(git remote get-url "$REMOTE1"))"
 print_info "Remote 2: $REMOTE2 ($(git remote get-url "$REMOTE2"))"
+if [ "$DRY_RUN" = true ]; then
+    print_warning "DRY RUN MODE: No changes will be made"
+fi
 echo ""
 
 # Step 1: Fetch from both remotes
@@ -218,6 +232,10 @@ if [ "$REMOTE1_BRANCH_EXISTS" -eq 0 ]; then
     print_warning "Branch '$BRANCH' does not exist on $REMOTE1"
     print_info "Branch exists on: $REMOTE2"
     echo ""
+    if [ "$DRY_RUN" = true ]; then
+        print_info "Would create branch '$BRANCH' on $REMOTE1"
+        exit 0
+    fi
     if confirm "Create branch '$BRANCH' on $REMOTE1?"; then
         print_info "Creating and pushing branch to $REMOTE1..."
         git push "$REMOTE1" "$REMOTE2/$BRANCH:refs/heads/$BRANCH"
@@ -233,6 +251,10 @@ if [ "$REMOTE2_BRANCH_EXISTS" -eq 0 ]; then
     print_warning "Branch '$BRANCH' does not exist on $REMOTE2"
     print_info "Branch exists on: $REMOTE1"
     echo ""
+    if [ "$DRY_RUN" = true ]; then
+        print_info "Would create branch '$BRANCH' on $REMOTE2"
+        exit 0
+    fi
     if confirm "Create branch '$BRANCH' on $REMOTE2?"; then
         print_info "Creating and pushing branch to $REMOTE2..."
         git push "$REMOTE2" "$REMOTE1/$BRANCH:refs/heads/$BRANCH"
@@ -304,7 +326,9 @@ elif [ "$REMOTE1_AHEAD" -gt 0 ]; then
     # Remote1 is ahead
     print_info "Direction: $REMOTE1 → $REMOTE2"
     echo ""
-    if confirm "Push $REMOTE1_AHEAD commit(s) from $REMOTE1 to $REMOTE2?"; then
+    if [ "$DRY_RUN" = true ]; then
+        print_info "Would push $REMOTE1_AHEAD commit(s) from $REMOTE1 to $REMOTE2"
+    elif confirm "Push $REMOTE1_AHEAD commit(s) from $REMOTE1 to $REMOTE2?"; then
         print_info "Pushing to $REMOTE2..."
         git push "$REMOTE2" "$REMOTE1_REF:refs/heads/$BRANCH"
         print_success "Successfully synced to $REMOTE2"
@@ -315,7 +339,9 @@ elif [ "$REMOTE2_AHEAD" -gt 0 ]; then
     # Remote2 is ahead
     print_info "Direction: $REMOTE2 → $REMOTE1"
     echo ""
-    if confirm "Push $REMOTE2_AHEAD commit(s) from $REMOTE2 to $REMOTE1?"; then
+    if [ "$DRY_RUN" = true ]; then
+        print_info "Would push $REMOTE2_AHEAD commit(s) from $REMOTE2 to $REMOTE1"
+    elif confirm "Push $REMOTE2_AHEAD commit(s) from $REMOTE2 to $REMOTE1?"; then
         print_info "Pushing to $REMOTE1..."
         git push "$REMOTE1" "$REMOTE2_REF:refs/heads/$BRANCH"
         print_success "Successfully synced to $REMOTE1"
@@ -325,4 +351,8 @@ elif [ "$REMOTE2_AHEAD" -gt 0 ]; then
 fi
 
 echo ""
-print_success "Sync operation completed"
+if [ "$DRY_RUN" = true ]; then
+    print_success "Dry run completed - no changes were made"
+else
+    print_success "Sync operation completed"
+fi

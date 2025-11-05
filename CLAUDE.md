@@ -12,13 +12,15 @@ git-sync-remotes is a bash script that syncs commits between two git remotes aut
 
 Single bash script (git-sync-remotes:1-329) that performs the entire sync workflow:
 
-1. **Argument Parsing** (git-sync-remotes:74-182)
+1. **Argument Parsing** (git-sync-remotes:77-189)
    - Handles `-y`/`--yes` flag for auto-confirmation
+   - Handles `--dry-run` flag for preview-only mode
    - Auto-detects remotes (if exactly 2 exist) or accepts explicit remote arguments
    - Auto-detects current branch or accepts branch argument
    - Supports these usage patterns:
      - `git-sync-remotes` - auto-detect everything
      - `git-sync-remotes -y` - auto-detect with auto-confirm
+     - `git-sync-remotes --dry-run` - preview changes without syncing
      - `git-sync-remotes branch` - specify branch, auto-detect remotes
      - `git-sync-remotes remote1 remote2` - specify remotes, use current branch
      - `git-sync-remotes branch remote1 remote2` - specify everything
@@ -37,10 +39,11 @@ Single bash script (git-sync-remotes:1-329) that performs the entire sync workfl
    - Uses `git rev-list --count` to count commits ahead/behind
    - Displays commit logs and dates to help user understand differences
 
-5. **Sync Logic** (git-sync-remotes:292-325)
+5. **Sync Logic** (git-sync-remotes:314-358)
    - **In Sync**: Both remotes at same commit - exit successfully
    - **One Ahead**: Push commits from ahead remote to behind remote
    - **Diverged**: Both have unique commits - requires manual intervention
+   - **Dry-Run Mode**: Shows what would be synced without executing push
    - Uses `git push remote ref:refs/heads/branch` for syncing
 
 ### Installation Scripts
@@ -60,6 +63,9 @@ Both scripts share common color output functions (print_error, print_success, pr
 
 # Test with auto-confirm
 ./git-sync-remotes -y
+
+# Test with dry-run (preview only)
+./git-sync-remotes --dry-run
 
 # Test with specific branch
 ./git-sync-remotes main
