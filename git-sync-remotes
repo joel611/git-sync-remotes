@@ -1,0 +1,328 @@
+#!/bin/bash
+
+# sync-remotes.sh - Sync commits between two git remotes
+# Usage: git-sync-remotes [options] [branch-name] [remote1 remote2]
+#   -y, --yes: Auto-confirm all prompts
+#   If branch is not specified, uses current branch
+#   If remotes are not specified, auto-detects (must have exactly 2 remotes)
+# Examples:
+#   git-sync-remotes                    # Sync current branch, auto-detect remotes
+#   git-sync-remotes master             # Sync master branch, auto-detect remotes
+#   git-sync-remotes -y                 # Sync current branch with auto-confirm
+#   git-sync-remotes master gitlab origin  # Sync master between gitlab and origin
+
+set -e
+
+# Ensure we're operating in the current working directory
+# This allows the script to work from anywhere via alias
+cd "$(pwd)" || exit 1
+
+# Verify we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not a git repository"
+    exit 1
+fi
+
+# Configuration
+REMOTE1=""
+REMOTE2=""
+BRANCH=""
+AUTO_CONFIRM=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_error() {
+    echo -e "${RED}ERROR: $1${NC}" >&2
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ $1${NC}"
+}
+
+confirm() {
+    if [ "$AUTO_CONFIRM" = true ]; then
+        return 0
+    fi
+
+    local prompt="$1"
+    local response
+    read -p "$prompt [y/n]: " response
+    case "$response" in
+        [Yy]* ) return 0;;
+        [Nn]* ) return 1;;
+        * )
+            print_warning "Invalid response, treating as 'no'"
+            return 1
+            ;;
+    esac
+}
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -y|--yes)
+            AUTO_CONFIRM=true
+            shift
+            ;;
+        -*)
+            print_error "Unknown option: $1"
+            echo "Usage: $0 [-y] [branch-name] [remote1 remote2]"
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# Parse arguments
+if [ $# -eq 0 ]; then
+    # Default to current branch
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ $? -ne 0 ] || [ -z "$BRANCH" ]; then
+        print_error "Could not determine current branch"
+        echo "Usage: $0 [-y] [branch-name] [remote1 remote2]"
+        exit 1
+    fi
+    print_info "No branch specified, using current branch: $BRANCH"
+else
+    BRANCH="$1"
+fi
+
+# Auto-detect or use provided remotes
+if [ $# -eq 0 ] || [ $# -eq 1 ]; then
+    # Auto-detect remotes (no remotes specified)
+    print_info "Auto-detecting remotes..."
+    REMOTES=()
+    while IFS= read -r remote; do
+        REMOTES+=("$remote")
+    done < <(git remote)
+
+    if [ ${#REMOTES[@]} -eq 0 ]; then
+        print_error "No git remotes found"
+        exit 1
+    elif [ ${#REMOTES[@]} -eq 1 ]; then
+        print_error "Only one remote found: ${REMOTES[0]}"
+        print_error "Need at least 2 remotes to sync"
+        exit 1
+    elif [ ${#REMOTES[@]} -eq 2 ]; then
+        REMOTE1="${REMOTES[0]}"
+        REMOTE2="${REMOTES[1]}"
+        print_success "Detected 2 remotes: $REMOTE1, $REMOTE2"
+    else
+        print_error "Found ${#REMOTES[@]} remotes: ${REMOTES[*]}"
+        print_error "Please specify which two remotes to sync:"
+        echo "Usage: $0 [branch-name] <remote1> <remote2>"
+        echo ""
+        echo "Available remotes:"
+        for remote in "${REMOTES[@]}"; do
+            url=$(git remote get-url "$remote")
+            echo "  - $remote: $url"
+        done
+        exit 1
+    fi
+elif [ $# -eq 2 ]; then
+    # Branch name provided, but remotes specified (branch remote1 remote2)
+    # This means $1 is branch, but we need remotes
+    # Actually, this means user wants to specify remotes without branch (use current)
+    # remote1 remote2
+    REMOTE1="$1"
+    REMOTE2="$2"
+
+    # Validate remotes exist
+    if ! git remote | grep -q "^${REMOTE1}$"; then
+        print_error "Remote '$REMOTE1' does not exist"
+        exit 1
+    fi
+    if ! git remote | grep -q "^${REMOTE2}$"; then
+        print_error "Remote '$REMOTE2' does not exist"
+        exit 1
+    fi
+
+    # Get current branch since no branch was specified
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ $? -ne 0 ] || [ -z "$BRANCH" ]; then
+        print_error "Could not determine current branch"
+        exit 1
+    fi
+    print_info "No branch specified, using current branch: $BRANCH"
+elif [ $# -eq 3 ]; then
+    # Use provided remotes and branch
+    BRANCH="$1"
+    REMOTE1="$2"
+    REMOTE2="$3"
+
+    # Validate remotes exist
+    if ! git remote | grep -q "^${REMOTE1}$"; then
+        print_error "Remote '$REMOTE1' does not exist"
+        exit 1
+    fi
+    if ! git remote | grep -q "^${REMOTE2}$"; then
+        print_error "Remote '$REMOTE2' does not exist"
+        exit 1
+    fi
+else
+    print_error "Invalid number of arguments"
+    echo "Usage: $0 [branch-name] [remote1 remote2]"
+    exit 1
+fi
+
+echo "=========================================="
+echo "Git Remote Sync Tool"
+echo "=========================================="
+echo ""
+print_info "Branch: $BRANCH"
+print_info "Remote 1: $REMOTE1 ($(git remote get-url "$REMOTE1"))"
+print_info "Remote 2: $REMOTE2 ($(git remote get-url "$REMOTE2"))"
+echo ""
+
+# Step 1: Fetch from both remotes
+print_info "Fetching from both remotes..."
+if ! git fetch "$REMOTE1" 2>&1; then
+    print_error "Failed to fetch from $REMOTE1"
+    exit 1
+fi
+
+if ! git fetch "$REMOTE2" 2>&1; then
+    print_error "Failed to fetch from $REMOTE2"
+    exit 1
+fi
+print_success "Fetched from both remotes"
+echo ""
+
+# Step 2: Check if branch exists on both remotes
+REMOTE1_BRANCH_EXISTS=$(git ls-remote --heads "$REMOTE1" "refs/heads/$BRANCH" | wc -l | tr -d ' ')
+REMOTE2_BRANCH_EXISTS=$(git ls-remote --heads "$REMOTE2" "refs/heads/$BRANCH" | wc -l | tr -d ' ')
+
+# Handle missing branches
+if [ "$REMOTE1_BRANCH_EXISTS" -eq 0 ] && [ "$REMOTE2_BRANCH_EXISTS" -eq 0 ]; then
+    print_error "Branch '$BRANCH' does not exist on either remote"
+    exit 1
+fi
+
+if [ "$REMOTE1_BRANCH_EXISTS" -eq 0 ]; then
+    print_warning "Branch '$BRANCH' does not exist on $REMOTE1"
+    print_info "Branch exists on: $REMOTE2"
+    echo ""
+    if confirm "Create branch '$BRANCH' on $REMOTE1?"; then
+        print_info "Creating and pushing branch to $REMOTE1..."
+        git push "$REMOTE1" "$REMOTE2/$BRANCH:refs/heads/$BRANCH"
+        print_success "Branch created and synced to $REMOTE1"
+        exit 0
+    else
+        print_info "Branch creation cancelled"
+        exit 0
+    fi
+fi
+
+if [ "$REMOTE2_BRANCH_EXISTS" -eq 0 ]; then
+    print_warning "Branch '$BRANCH' does not exist on $REMOTE2"
+    print_info "Branch exists on: $REMOTE1"
+    echo ""
+    if confirm "Create branch '$BRANCH' on $REMOTE2?"; then
+        print_info "Creating and pushing branch to $REMOTE2..."
+        git push "$REMOTE2" "$REMOTE1/$BRANCH:refs/heads/$BRANCH"
+        print_success "Branch created and synced to $REMOTE2"
+        exit 0
+    else
+        print_info "Branch creation cancelled"
+        exit 0
+    fi
+fi
+
+# Step 3: Compare commits
+REMOTE1_REF="$REMOTE1/$BRANCH"
+REMOTE2_REF="$REMOTE2/$BRANCH"
+
+# Get commit SHAs
+REMOTE1_SHA=$(git rev-parse "$REMOTE1_REF")
+REMOTE2_SHA=$(git rev-parse "$REMOTE2_REF")
+
+# Check if they're the same
+if [ "$REMOTE1_SHA" = "$REMOTE2_SHA" ]; then
+    print_success "Both remotes are in sync!"
+    print_info "Latest commit: $(git log -1 --format='%h - %s (%cr)' "$REMOTE1_REF")"
+    exit 0
+fi
+
+# Count commits ahead/behind
+REMOTE1_AHEAD=$(git rev-list --count "$REMOTE2_REF..$REMOTE1_REF")
+REMOTE2_AHEAD=$(git rev-list --count "$REMOTE1_REF..$REMOTE2_REF")
+
+# Get last commit dates
+REMOTE1_DATE=$(git log -1 --format='%ci' "$REMOTE1_REF")
+REMOTE2_DATE=$(git log -1 --format='%ci' "$REMOTE2_REF")
+
+echo "=========================================="
+echo "Commit Status"
+echo "=========================================="
+echo ""
+print_info "$REMOTE1 has $REMOTE1_AHEAD commit(s) not in $REMOTE2"
+print_info "Last commit: $REMOTE1_DATE"
+if [ "$REMOTE1_AHEAD" -gt 0 ]; then
+    echo ""
+    echo "Latest commits on $REMOTE1:"
+    git log --oneline --graph --decorate -n 5 "$REMOTE2_REF..$REMOTE1_REF"
+fi
+echo ""
+
+print_info "$REMOTE2 has $REMOTE2_AHEAD commit(s) not in $REMOTE1"
+print_info "Last commit: $REMOTE2_DATE"
+if [ "$REMOTE2_AHEAD" -gt 0 ]; then
+    echo ""
+    echo "Latest commits on $REMOTE2:"
+    git log --oneline --graph --decorate -n 5 "$REMOTE1_REF..$REMOTE2_REF"
+fi
+echo ""
+
+# Step 4: Determine action
+if [ "$REMOTE1_AHEAD" -gt 0 ] && [ "$REMOTE2_AHEAD" -gt 0 ]; then
+    # Both remotes have diverged
+    print_error "DIVERGED: Both remotes have unique commits!"
+    echo ""
+    print_warning "Manual intervention required. Please resolve the divergence manually."
+    print_info "You may need to:"
+    echo "  1. Checkout the branch locally"
+    echo "  2. Merge or rebase the changes"
+    echo "  3. Push to both remotes"
+    exit 1
+elif [ "$REMOTE1_AHEAD" -gt 0 ]; then
+    # Remote1 is ahead
+    print_info "Direction: $REMOTE1 → $REMOTE2"
+    echo ""
+    if confirm "Push $REMOTE1_AHEAD commit(s) from $REMOTE1 to $REMOTE2?"; then
+        print_info "Pushing to $REMOTE2..."
+        git push "$REMOTE2" "$REMOTE1_REF:refs/heads/$BRANCH"
+        print_success "Successfully synced to $REMOTE2"
+    else
+        print_info "Sync cancelled"
+    fi
+elif [ "$REMOTE2_AHEAD" -gt 0 ]; then
+    # Remote2 is ahead
+    print_info "Direction: $REMOTE2 → $REMOTE1"
+    echo ""
+    if confirm "Push $REMOTE2_AHEAD commit(s) from $REMOTE2 to $REMOTE1?"; then
+        print_info "Pushing to $REMOTE1..."
+        git push "$REMOTE1" "$REMOTE2_REF:refs/heads/$BRANCH"
+        print_success "Successfully synced to $REMOTE1"
+    else
+        print_info "Sync cancelled"
+    fi
+fi
+
+echo ""
+print_success "Sync operation completed"
