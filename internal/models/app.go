@@ -125,33 +125,21 @@ type initFetchMsg struct{}
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	// Only fetch if we have 2 remotes
+	// Start spinner and auto-fetch in background if we have 2 remotes
 	if m.remote2 != nil {
-		// Trigger initial fetch
 		return tea.Batch(
 			m.spinner.Tick,
-			func() tea.Msg { return initFetchMsg{} },
+			fetchRemotes(m.repo, m.remote1.Name, m.remote2.Name),
 		)
 	}
 
-	// If only 1 remote, show message and start spinner
-	return tea.Batch(
-		m.spinner.Tick,
-		func() tea.Msg {
-			return fetchCompleteMsg{err: fmt.Errorf("only one remote found. Press 'a' to add a second remote")}
-		},
-	)
+	// If only 1 remote, just start spinner
+	return m.spinner.Tick
 }
 
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case initFetchMsg:
-		// Set loading state and start fetch
-		m.loading = true
-		m.message = "Fetching from remotes..."
-		return m, fetchRemotes(m.repo, m.remote1.Name, m.remote2.Name)
-
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
 
@@ -169,10 +157,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err
-			m.message = fmt.Sprintf("%v", msg.err)
+			m.message = fmt.Sprintf("Fetch failed: %v. Press 'f' to retry.", msg.err)
 			return m, nil
 		}
-		m.message = "Fetch complete"
+		m.message = ""
 		// Only compare if we have 2 remotes
 		if m.remote2 != nil {
 			return m, compareBranch(m.repo, m.remote1.Name, m.remote2.Name, m.currentBranch)
@@ -592,12 +580,16 @@ func (m Model) View() string {
 // renderHeader renders the header pane
 func (m Model) renderHeader() string {
 	var status string
-	if m.loading {
-		status = fmt.Sprintf("%s Loading...", m.spinner.View())
+
+	// Show appropriate status
+	if m.remote2 == nil {
+		status = "Only one remote found. Press 'a' to add a second remote."
+	} else if m.loading {
+		status = fmt.Sprintf("%s Fetching from remotes...", m.spinner.View())
 	} else if m.compareResult != nil {
 		status = ui.FormatSyncStatus(m.compareResult, m.remote1.Name, m.remote2.Name)
 	} else {
-		status = "Initializing..."
+		status = "Ready. Press 'f' to fetch from remotes."
 	}
 
 	headerStyle := lipgloss.NewStyle().
@@ -620,13 +612,24 @@ func (m Model) renderHeader() string {
 
 // renderMainContent renders the main content area
 func (m Model) renderMainContent() string {
-	if m.compareResult == nil {
-		return "Loading..."
+	// Show two panes even if no compare result yet
+	var remote1Commits, remote2Commits []git.Commit
+
+	if m.compareResult != nil {
+		remote1Commits = m.compareResult.Remote1Commits
+		remote2Commits = m.compareResult.Remote2Commits
 	}
 
-	// For now, simple commit list view
-	left := m.renderCommitList(m.remote1.Name, m.compareResult.Remote1Commits, m.focusedPane == CommitList1)
-	right := m.renderCommitList(m.remote2.Name, m.compareResult.Remote2Commits, m.focusedPane == CommitList2)
+	// Render commit lists (will show empty if no commits)
+	var left, right string
+	if m.remote2 != nil {
+		left = m.renderCommitList(m.remote1.Name, remote1Commits, m.focusedPane == CommitList1)
+		right = m.renderCommitList(m.remote2.Name, remote2Commits, m.focusedPane == CommitList2)
+	} else {
+		// Only one remote - show single pane
+		left = m.renderCommitList(m.remote1.Name, remote1Commits, true)
+		right = m.renderPlaceholder()
+	}
 
 	columns := lipgloss.JoinHorizontal(lipgloss.Top,
 		left,
@@ -634,6 +637,24 @@ func (m Model) renderMainContent() string {
 	)
 
 	return columns
+}
+
+// renderPlaceholder renders a placeholder pane
+func (m Model) renderPlaceholder() string {
+	style := lipgloss.NewStyle().
+		Width(m.width / 2).
+		Padding(1).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderLeft(true).
+		BorderRight(true)
+
+	var lines []string
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Render("SECOND REMOTE"))
+	lines = append(lines, "")
+	lines = append(lines, "  Press 'a' to add a second remote")
+	lines = append(lines, "")
+
+	return style.Render(strings.Join(lines, "\n"))
 }
 
 // renderCommitList renders a commit list
@@ -657,7 +678,11 @@ func (m Model) renderCommitList(remoteName string, commits []git.Commit, focused
 	lines = append(lines, "")
 
 	if len(commits) == 0 {
-		lines = append(lines, "  (no unique commits)")
+		if m.compareResult == nil {
+			lines = append(lines, "  (waiting for fetch...)")
+		} else {
+			lines = append(lines, "  (no unique commits)")
+		}
 	} else {
 		for i, commit := range commits {
 			prefix := "  "
