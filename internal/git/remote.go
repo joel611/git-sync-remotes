@@ -1,9 +1,11 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Remote represents a git remote
@@ -75,12 +77,19 @@ func (r *Repository) RemoteExists(name string) (bool, error) {
 	return false, nil
 }
 
-// Fetch fetches from the specified remote
+// Fetch fetches from the specified remote with a 30 second timeout
 func (r *Repository) Fetch(remoteName string) error {
-	cmd := exec.Command("git", "fetch", remoteName)
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "fetch", remoteName)
 	cmd.Dir = r.Path
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("fetch from %s timed out after 30 seconds", remoteName)
+		}
 		return fmt.Errorf("failed to fetch from %s: %w\nOutput: %s", remoteName, err, string(output))
 	}
 

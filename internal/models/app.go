@@ -120,24 +120,38 @@ type branchCreateMsg struct {
 	err        error
 }
 
+// Messages for initialization
+type initFetchMsg struct{}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick}
-
 	// Only fetch if we have 2 remotes
 	if m.remote2 != nil {
-		cmds = append(cmds, fetchRemotes(m.repo, m.remote1.Name, m.remote2.Name))
-	} else {
-		// Show message that user needs to add a second remote
-		m.message = "Only one remote found. Press 'a' to add a second remote."
+		// Trigger initial fetch
+		return tea.Batch(
+			m.spinner.Tick,
+			func() tea.Msg { return initFetchMsg{} },
+		)
 	}
 
-	return tea.Batch(cmds...)
+	// If only 1 remote, show message and start spinner
+	return tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			return fetchCompleteMsg{err: fmt.Errorf("only one remote found. Press 'a' to add a second remote")}
+		},
+	)
 }
 
 // Update handles messages and updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case initFetchMsg:
+		// Set loading state and start fetch
+		m.loading = true
+		m.message = "Fetching from remotes..."
+		return m, fetchRemotes(m.repo, m.remote1.Name, m.remote2.Name)
+
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
 
@@ -155,11 +169,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err
-			m.message = fmt.Sprintf("Fetch failed: %v", msg.err)
+			m.message = fmt.Sprintf("%v", msg.err)
 			return m, nil
 		}
 		m.message = "Fetch complete"
-		return m, compareBranch(m.repo, m.remote1.Name, m.remote2.Name, m.currentBranch)
+		// Only compare if we have 2 remotes
+		if m.remote2 != nil {
+			return m, compareBranch(m.repo, m.remote1.Name, m.remote2.Name, m.currentBranch)
+		}
+		return m, nil
 
 	case compareCompleteMsg:
 		m.loading = false
