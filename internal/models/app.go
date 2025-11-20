@@ -67,6 +67,12 @@ type Model struct {
 
 	// Branch info overlay
 	showBranchInfo bool
+
+	// Detail pane
+	showDetail     bool
+	detailContent  string
+	detailScroll   int
+	detailMaxLines int
 }
 
 // NewModel creates a new TUI model
@@ -118,6 +124,11 @@ type branchCreateMsg struct {
 	branchName string
 	remoteName string
 	err        error
+}
+
+type commitDetailMsg struct {
+	diff string
+	err  error
 }
 
 // Messages for initialization
@@ -253,6 +264,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("Branch '%s' created on %s. Press 'b' to refresh branches.", msg.branchName, msg.remoteName)
 		// Refresh branches after creation
 		return m, loadBranches(m.repo, m.remote1.Name, m.remote2.Name)
+
+	case commitDetailMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.message = fmt.Sprintf("Failed to load commit details: %v", msg.err)
+			return m, nil
+		}
+		m.detailContent = msg.diff
+		m.detailScroll = 0
+		// Count lines for scrolling
+		m.detailMaxLines = strings.Count(msg.diff, "\n")
+		m.showDetail = true
+		return m, nil
 	}
 
 	return m, nil
@@ -260,6 +285,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle detail pane scrolling
+	if m.showDetail {
+		switch msg.String() {
+		case "esc", "q":
+			m.showDetail = false
+			return m, nil
+		case "d", "pgdown":
+			// Scroll down (show later lines)
+			visibleLines := m.height - 10 // Approximate
+			if m.detailScroll < m.detailMaxLines-visibleLines {
+				m.detailScroll += 5
+			}
+			return m, nil
+		case "u", "pgup":
+			// Scroll up (show earlier lines)
+			if m.detailScroll > 0 {
+				m.detailScroll -= 5
+				if m.detailScroll < 0 {
+					m.detailScroll = 0
+				}
+			}
+			return m, nil
+		case "j", "down":
+			// Scroll down one line
+			if m.detailScroll < m.detailMaxLines-(m.height-10) {
+				m.detailScroll++
+			}
+			return m, nil
+		case "k", "up":
+			// Scroll up one line
+			if m.detailScroll > 0 {
+				m.detailScroll--
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	// Handle dialog-specific keys first
 	if m.showHelp {
 		if msg.String() == "?" || msg.String() == "esc" {
@@ -513,6 +576,23 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		m.focusedPane = (m.focusedPane + 1) % 3
 
+	case "enter":
+		// Show commit detail when Enter is pressed on a commit
+		if (m.focusedPane == CommitList1 || m.focusedPane == CommitList2) && m.compareResult != nil {
+			var commits []git.Commit
+			if m.focusedPane == CommitList1 {
+				commits = m.compareResult.Remote1Commits
+			} else {
+				commits = m.compareResult.Remote2Commits
+			}
+
+			if m.selectedIndex < len(commits) {
+				commit := commits[m.selectedIndex]
+				m.loading = true
+				return m, loadCommitDetail(m.repo, commit.SHA)
+			}
+		}
+
 	case "j", "down":
 		if m.focusedPane == CommitList1 || m.focusedPane == CommitList2 {
 			m.selectedIndex++
@@ -562,6 +642,11 @@ func (m Model) View() string {
 	// Show branch info overlay if active
 	if m.showBranchInfo {
 		return m.renderBranchInfo()
+	}
+
+	// Show commit detail pane if active
+	if m.showDetail {
+		return m.renderDetailPane()
 	}
 
 	// Show sync dialog if active
@@ -758,6 +843,7 @@ Keyboard Shortcuts:
     ↑/k         Move up in list
     ↓/j         Move down in list
     Tab         Switch between panes
+    Enter       View commit details (when on a commit)
 
   Actions:
     a           Add remote (when only 1 remote exists)
@@ -768,6 +854,11 @@ Keyboard Shortcuts:
   Branch Management (in branch selector):
     c           Create branch on missing remote
     i           Show branch information
+
+  Detail Pane:
+    d/u         Scroll page down/up
+    j/k         Scroll line down/up
+    q/Esc       Close detail pane
 
   Other:
     ?           Toggle this help
@@ -966,6 +1057,47 @@ Continue? [y/n]
 		dialogStyle.Render(dialog))
 }
 
+// renderDetailPane renders the commit detail pane with diff
+func (m Model) renderDetailPane() string {
+	dialogStyle := lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205"))
+
+	if m.loading {
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			dialogStyle.Render("Loading commit details..."))
+	}
+
+	var lines []string
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Render("Commit Details"))
+	lines = append(lines, "")
+
+	// Split content into lines and apply scroll offset
+	contentLines := strings.Split(m.detailContent, "\n")
+	visibleHeight := m.height - 6 // Account for header, border, footer
+
+	// Calculate visible range
+	start := m.detailScroll
+	end := start + visibleHeight
+	if end > len(contentLines) {
+		end = len(contentLines)
+	}
+	if start < len(contentLines) {
+		lines = append(lines, contentLines[start:end]...)
+	}
+
+	lines = append(lines, "")
+	scrollInfo := fmt.Sprintf("Lines %d-%d of %d | d/u: Scroll | j/k: Line | q/Esc: Close",
+		start+1, end, len(contentLines))
+	lines = append(lines, scrollInfo)
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		dialogStyle.Width(m.width-4).Height(m.height-2).Render(strings.Join(lines, "\n")))
+}
+
 // renderBranchInfo renders the branch info overlay
 func (m Model) renderBranchInfo() string {
 	dialogStyle := lipgloss.NewStyle().
@@ -1116,5 +1248,12 @@ func createBranch(repo *git.Repository, remoteName, branchName, sourceRef string
 			remoteName: remoteName,
 			err:        err,
 		}
+	}
+}
+
+func loadCommitDetail(repo *git.Repository, sha string) tea.Cmd {
+	return func() tea.Msg {
+		diff, err := repo.GetCommitDiff(sha)
+		return commitDetailMsg{diff: diff, err: err}
 	}
 }

@@ -3,7 +3,14 @@
     "allow": [
       "Bash(openspec list:*)",
       "Bash(openspec show:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(go mod init:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(make build:*)",
+      "Bash(make release:*)"
     ],
     "deny": [],
     "ask": []
