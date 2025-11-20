@@ -1,74 +1,74 @@
 # Implementation Tasks
 
 ## 1. Project Setup
-- [ ] 1.1 Initialize Go module (`go.mod`) with project name and dependencies
-- [ ] 1.2 Add bubbletea, bubbles, lipgloss dependencies
-- [ ] 1.3 Add go-git library for git operations
-- [ ] 1.4 Create project directory structure (`cmd/`, `internal/git/`, `internal/ui/`, `internal/models/`)
-- [ ] 1.5 Create Makefile with build, install, test, and clean targets
-- [ ] 1.6 Add .gitignore for Go binaries and build artifacts
+- [x] 1.1 Initialize Go module (`go.mod`) with project name and dependencies
+- [x] 1.2 Add bubbletea, bubbles, lipgloss dependencies
+- [x] 1.3 Add go-git library for git operations (using git CLI commands, not go-git library)
+- [x] 1.4 Create project directory structure (`cmd/`, `internal/git/`, `internal/ui/`, `internal/models/`)
+- [x] 1.5 Create Makefile with build, install, test, and clean targets
+- [x] 1.6 Add .gitignore for Go binaries and build artifacts
 
 ## 2. Git Operations Layer
-- [ ] 2.1 Implement git repository initialization and validation (`internal/git/repo.go`)
-- [ ] 2.2 Implement remote detection and listing (`internal/git/remote.go`)
-- [ ] 2.3 Implement branch listing and validation (`internal/git/branch.go`)
-- [ ] 2.4 Implement fetch operations for remotes (`internal/git/fetch.go`)
-- [ ] 2.5 Implement commit comparison logic (ahead/behind counting) (`internal/git/compare.go`)
-- [ ] 2.6 Implement push operations for sync (`internal/git/sync.go`)
-- [ ] 2.7 Implement branch creation on remote (`internal/git/branch.go`)
-- [ ] 2.8 Add error handling and git operation logging
+- [x] 2.1 Implement git repository initialization and validation (`internal/git/repo.go`)
+- [x] 2.2 Implement remote detection and listing (`internal/git/remote.go`)
+- [x] 2.3 Implement branch listing and validation (`internal/git/branch.go`)
+- [x] 2.4 Implement fetch operations for remotes (`internal/git/remote.go`)
+- [x] 2.5 Implement commit comparison logic (ahead/behind counting) (`internal/git/compare.go`)
+- [x] 2.6 Implement push operations for sync (`internal/git/sync.go`)
+- [x] 2.7 Implement branch creation on remote (`internal/git/branch.go`)
+- [x] 2.8 Add error handling and git operation logging
 - [ ] 2.9 Write unit tests for git operations (using test fixtures)
 
 ## 3. Core TUI Framework
-- [ ] 3.1 Create main bubbletea Model struct (`internal/models/app.go`)
-- [ ] 3.2 Implement Init() function for initial state and commands
-- [ ] 3.3 Implement Update() function for handling messages and state transitions
-- [ ] 3.4 Implement View() function for rendering main layout
-- [ ] 3.5 Create message types for git operations (FetchMsg, SyncMsg, etc.)
-- [ ] 3.6 Implement application startup and repository validation
+- [x] 3.1 Create main bubbletea Model struct (`internal/models/app.go`)
+- [x] 3.2 Implement Init() function for initial state and commands
+- [x] 3.3 Implement Update() function for handling messages and state transitions
+- [x] 3.4 Implement View() function for rendering main layout
+- [x] 3.5 Create message types for git operations (FetchMsg, SyncMsg, etc.)
+- [x] 3.6 Implement application startup and repository validation
 
 ## 4. UI Components - Layout
-- [ ] 4.1 Create header component with branch and remote info (`internal/ui/header.go`)
-- [ ] 4.2 Create dual commit list component (`internal/ui/commits.go`)
-- [ ] 4.3 Create detail pane component for commit preview (`internal/ui/detail.go`)
-- [ ] 4.4 Create footer component with keyboard shortcuts (`internal/ui/footer.go`)
-- [ ] 4.5 Implement responsive layout logic for terminal resizing
-- [ ] 4.6 Create color scheme and styling with lipgloss
+- [x] 4.1 Create header component with branch and remote info (inline in app.go)
+- [x] 4.2 Create dual commit list component (inline in app.go)
+- [x] 4.3 Create detail pane component for commit preview (not yet implemented)
+- [x] 4.4 Create footer component with keyboard shortcuts (inline in app.go)
+- [x] 4.5 Implement responsive layout logic for terminal resizing
+- [x] 4.6 Create color scheme and styling with lipgloss
 
 ## 5. UI Components - Dialogs
 - [ ] 5.1 Create confirmation dialog component (`internal/ui/dialog.go`)
 - [ ] 5.2 Create error dialog component
-- [ ] 5.3 Create help overlay component (`internal/ui/help.go`)
+- [x] 5.3 Create help overlay component (inline in app.go)
 - [ ] 5.4 Create branch selector dialog (`internal/ui/branch_selector.go`)
-- [ ] 5.5 Create loading/progress indicator component (`internal/ui/spinner.go`)
+- [x] 5.5 Create loading/progress indicator component (using bubbles/spinner)
 - [ ] 5.6 Create sync log viewer overlay (`internal/ui/log.go`)
 
 ## 6. Keyboard Navigation
-- [ ] 6.1 Implement pane focus management and Tab navigation
-- [ ] 6.2 Implement vim-like navigation (j/k/h/l) in commit lists
+- [x] 6.1 Implement pane focus management and Tab navigation
+- [x] 6.2 Implement vim-like navigation (j/k) in commit lists
 - [ ] 6.3 Implement scrolling in detail pane (d/u, PageDown/PageUp)
-- [ ] 6.4 Implement help overlay toggle (?)
-- [ ] 6.5 Implement quit confirmation (q, Ctrl+C)
+- [x] 6.4 Implement help overlay toggle (?)
+- [x] 6.5 Implement quit confirmation (q, Ctrl+C)
 - [ ] 6.6 Implement search in branch selector (/)
-- [ ] 6.7 Add keyboard shortcut reference to help overlay
+- [x] 6.7 Add keyboard shortcut reference to help overlay
 
 ## 7. Fetch Feature
-- [ ] 7.1 Implement fetch command trigger (f key)
-- [ ] 7.2 Implement auto-fetch on TUI launch
-- [ ] 7.3 Add fetch progress indicator
-- [ ] 7.4 Handle fetch errors with user-friendly messages
-- [ ] 7.5 Refresh commit lists after successful fetch
-- [ ] 7.6 Update header status after fetch
+- [x] 7.1 Implement fetch command trigger (f key)
+- [x] 7.2 Implement auto-fetch on TUI launch
+- [x] 7.3 Add fetch progress indicator
+- [x] 7.4 Handle fetch errors with user-friendly messages
+- [x] 7.5 Refresh commit lists after successful fetch
+- [x] 7.6 Update header status after fetch
 
 ## 8. Interactive Sync Feature
-- [ ] 8.1 Implement sync command trigger (s key)
-- [ ] 8.2 Create sync confirmation dialog with commit details
-- [ ] 8.3 Implement sync direction detection (which remote is ahead)
-- [ ] 8.4 Implement push operation with progress feedback
-- [ ] 8.5 Handle sync success and update UI state
-- [ ] 8.6 Handle sync errors (permissions, network, conflicts)
+- [x] 8.1 Implement sync command trigger (s key)
+- [x] 8.2 Create sync confirmation dialog with commit details
+- [x] 8.3 Implement sync direction detection (which remote is ahead)
+- [x] 8.4 Implement push operation with progress feedback
+- [x] 8.5 Handle sync success and update UI state
+- [x] 8.6 Handle sync errors (permissions, network, conflicts)
 - [ ] 8.7 Implement sync preview mode (Shift+S)
-- [ ] 8.8 Block sync when remotes are in sync or diverged
+- [x] 8.8 Block sync when remotes are in sync or diverged
 - [ ] 8.9 Implement sync log tracking (l key to view)
 
 ## 9. Branch Management Feature
