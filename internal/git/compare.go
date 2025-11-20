@@ -12,10 +12,11 @@ import (
 type SyncStatus int
 
 const (
-	InSync     SyncStatus = iota // Both remotes have identical commits
-	Remote1Ahead                  // Remote 1 is ahead of remote 2
-	Remote2Ahead                  // Remote 2 is ahead of remote 1
-	Diverged                      // Both remotes have unique commits
+	InSync       SyncStatus = iota // Both remotes have identical commits
+	Remote1Ahead                    // Remote 1 is ahead of remote 2
+	Remote2Ahead                    // Remote 2 is ahead of remote 1
+	Diverged                        // Both remotes have unique commits
+	BranchMissing                   // Branch doesn't exist on one or both remotes
 )
 
 func (s SyncStatus) String() string {
@@ -28,6 +29,8 @@ func (s SyncStatus) String() string {
 		return "remote2 ahead"
 	case Diverged:
 		return "diverged"
+	case BranchMissing:
+		return "branch missing"
 	default:
 		return "unknown"
 	}
@@ -45,13 +48,15 @@ type Commit struct {
 
 // CompareResult contains the comparison between two remotes for a branch
 type CompareResult struct {
-	Status         SyncStatus
-	Remote1Ahead   int
-	Remote2Ahead   int
-	Remote1SHA     string
-	Remote2SHA     string
-	Remote1Commits []Commit
-	Remote2Commits []Commit
+	Status           SyncStatus
+	Remote1Ahead     int
+	Remote2Ahead     int
+	Remote1SHA       string
+	Remote2SHA       string
+	Remote1Commits   []Commit
+	Remote2Commits   []Commit
+	Remote1HasBranch bool
+	Remote2HasBranch bool
 }
 
 // CompareBranch compares a branch between two remotes
@@ -59,21 +64,29 @@ func (r *Repository) CompareBranch(remote1, remote2, branch string) (*CompareRes
 	remote1Ref := fmt.Sprintf("%s/%s", remote1, branch)
 	remote2Ref := fmt.Sprintf("%s/%s", remote2, branch)
 
-	// Get commit SHAs
-	sha1, err := r.getCommitSHA(remote1Ref)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SHA for %s: %w", remote1Ref, err)
+	result := &CompareResult{}
+
+	// Check if branches exist on remotes
+	sha1, err1 := r.getCommitSHA(remote1Ref)
+	result.Remote1HasBranch = (err1 == nil)
+
+	sha2, err2 := r.getCommitSHA(remote2Ref)
+	result.Remote2HasBranch = (err2 == nil)
+
+	// If branch doesn't exist on one or both remotes
+	if !result.Remote1HasBranch || !result.Remote2HasBranch {
+		result.Status = BranchMissing
+		if result.Remote1HasBranch {
+			result.Remote1SHA = sha1
+		}
+		if result.Remote2HasBranch {
+			result.Remote2SHA = sha2
+		}
+		return result, nil
 	}
 
-	sha2, err := r.getCommitSHA(remote2Ref)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SHA for %s: %w", remote2Ref, err)
-	}
-
-	result := &CompareResult{
-		Remote1SHA: sha1,
-		Remote2SHA: sha2,
-	}
+	result.Remote1SHA = sha1
+	result.Remote2SHA = sha2
 
 	// If SHAs are identical, remotes are in sync
 	if sha1 == sha2 {

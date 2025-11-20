@@ -28,6 +28,15 @@ func FormatSyncStatus(result *git.CompareResult, remote1, remote2 string) string
 	case git.Diverged:
 		return divergedStyle.Render(fmt.Sprintf("⚠ Diverged: %s has %d, %s has %d unique commits",
 			remote1, result.Remote1Ahead, remote2, result.Remote2Ahead))
+	case git.BranchMissing:
+		// Determine which remote(s) are missing the branch
+		if !result.Remote1HasBranch && !result.Remote2HasBranch {
+			return aheadStyle.Render(fmt.Sprintf("⚠ Branch doesn't exist on %s or %s. Push to create it.", remote1, remote2))
+		} else if !result.Remote1HasBranch {
+			return aheadStyle.Render(fmt.Sprintf("⚠ Branch missing on %s. Press 'b' then 'c' to create it.", remote1))
+		} else {
+			return aheadStyle.Render(fmt.Sprintf("⚠ Branch missing on %s. Press 'b' then 'c' to create it.", remote2))
+		}
 	default:
 		return "Unknown status"
 	}

@@ -316,21 +316,29 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "y", "Y":
 			m.showBranchCreate = false
 			m.loading = true
-			// Determine source ref - use the remote that HAS the branch
+			// Determine source ref - use the remote that HAS the branch, or local branch if neither has it
 			var sourceRef string
 			if m.selectedBranchIdx < len(m.branches) {
 				selectedBranch := m.branches[m.selectedBranchIdx]
 				if selectedBranch.ExistsRemote1 {
+					// Branch exists on remote1, use it as source
 					sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, selectedBranch.Name)
 				} else if selectedBranch.ExistsRemote2 {
+					// Branch exists on remote2, use it as source
 					sourceRef = fmt.Sprintf("%s/%s", m.remote2.Name, selectedBranch.Name)
 				} else {
-					// Branch doesn't exist on either remote - use current branch as source
-					sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, m.currentBranch)
+					// Branch doesn't exist on either remote - use local branch
+					// If this is the current branch, use HEAD; otherwise use the branch name
+					if selectedBranch.Name == m.currentBranch {
+						sourceRef = "HEAD"
+					} else {
+						// Use local branch name (may not exist locally either, will fail with clear error)
+						sourceRef = selectedBranch.Name
+					}
 				}
 			} else {
-				// Fallback to current branch
-				sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, m.currentBranch)
+				// Fallback to current local branch
+				sourceRef = "HEAD"
 			}
 			return m, createBranch(m.repo, m.createOnRemote, m.createBranchName, sourceRef)
 		case "n", "N", "esc":
@@ -495,6 +503,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.message = "Remotes are already in sync"
 			} else if m.compareResult.Status == git.Diverged {
 				m.message = "Remotes have diverged - manual intervention required"
+			} else if m.compareResult.Status == git.BranchMissing {
+				m.message = "Branch is missing on one or both remotes. Press 'b' then 'c' to create it."
 			} else {
 				m.showSyncDialog = true
 			}
@@ -680,6 +690,18 @@ func (m Model) renderCommitList(remoteName string, commits []git.Commit, focused
 	if len(commits) == 0 {
 		if m.compareResult == nil {
 			lines = append(lines, "  (waiting for fetch...)")
+		} else if m.compareResult.Status == git.BranchMissing {
+			// Check if THIS remote has the branch
+			isRemote1 := remoteName == m.remote1.Name
+			hasBranch := (isRemote1 && m.compareResult.Remote1HasBranch) || (!isRemote1 && m.compareResult.Remote2HasBranch)
+
+			if hasBranch {
+				lines = append(lines, "  (branch exists here)")
+				lines = append(lines, "  (missing on other remote)")
+			} else {
+				lines = append(lines, "  (branch doesn't exist)")
+				lines = append(lines, "  (push from local to create)")
+			}
 		} else {
 			lines = append(lines, "  (no unique commits)")
 		}

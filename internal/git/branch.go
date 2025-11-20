@@ -1,9 +1,11 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // ValidateBranchName checks if a branch name is valid according to git naming conventions
@@ -116,19 +118,26 @@ func (r *Repository) BranchExistsOnRemote(remoteName, branchName string) (bool, 
 	return result != "", nil
 }
 
-// CreateBranchOnRemote creates a branch on the specified remote from a source ref
+// CreateBranchOnRemote creates a branch on the specified remote from a source ref with a 30 second timeout
 func (r *Repository) CreateBranchOnRemote(remoteName, branchName, sourceRef string) error {
 	// Validate branch name
 	if err := ValidateBranchName(branchName); err != nil {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Push the source ref to the remote as the new branch
 	refSpec := fmt.Sprintf("%s:refs/heads/%s", sourceRef, branchName)
-	cmd := exec.Command("git", "push", remoteName, refSpec)
+	cmd := exec.CommandContext(ctx, "git", "push", remoteName, refSpec)
 	cmd.Dir = r.Path
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("push to %s timed out after 30 seconds", remoteName)
+		}
 		return fmt.Errorf("failed to create branch %s on %s: %w\nOutput: %s",
 			branchName, remoteName, err, string(output))
 	}
