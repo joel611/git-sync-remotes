@@ -72,23 +72,23 @@
 - [ ] 8.9 Implement sync log tracking (l key to view)
 
 ## 9. Branch Management Feature
-- [ ] 9.1 Implement branch selector trigger (b key)
-- [ ] 9.2 Create branch list with remote existence indicators
-- [ ] 9.3 Implement branch switching and UI refresh
-- [ ] 9.4 Implement branch creation trigger (c key when branch is missing)
-- [ ] 9.5 Create branch creation confirmation dialog
-- [ ] 9.6 Handle branch creation success/failure
-- [ ] 9.7 Implement branch search (/) in branch selector
-- [ ] 9.8 Implement branch info overlay (i key)
-- [ ] 9.9 Implement branch list refresh (r key)
-- [ ] 9.10 Add branch name validation
+- [x] 9.1 Implement branch selector trigger (b key)
+- [x] 9.2 Create branch list with remote existence indicators
+- [x] 9.3 Implement branch switching and UI refresh
+- [x] 9.4 Implement branch creation trigger (c key when branch is missing)
+- [x] 9.5 Create branch creation confirmation dialog
+- [x] 9.6 Handle branch creation success/failure
+- [x] 9.7 Implement branch search (/) in branch selector
+- [x] 9.8 Implement branch info overlay (i key)
+- [x] 9.9 Implement branch list refresh (r key)
+- [x] 9.10 Add branch name validation
 
 ## 10. Visual Indicators
-- [ ] 10.1 Implement commit highlighting (unique to remote1, remote2, or both)
-- [ ] 10.2 Add sync status icons in header (checkmark, arrows, warning)
-- [ ] 10.3 Add branch existence indicators in branch selector
-- [ ] 10.4 Implement loading spinner for async operations
-- [ ] 10.5 Add color coding for sync states (in sync = green, diverged = red)
+- [x] 10.1 Implement commit highlighting (unique to remote1, remote2, or both)
+- [x] 10.2 Add sync status icons in header (checkmark, arrows, warning)
+- [x] 10.3 Add branch existence indicators in branch selector
+- [x] 10.4 Implement loading spinner for async operations
+- [x] 10.5 Add color coding for sync states (in sync = green, diverged = red)
 
 ## 11. Testing
 - [ ] 11.1 Write unit tests for git operations layer
