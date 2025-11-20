@@ -6,6 +6,56 @@ import (
 	"strings"
 )
 
+// ValidateBranchName checks if a branch name is valid according to git naming conventions
+func ValidateBranchName(name string) error {
+	if name == "" {
+		return fmt.Errorf("branch name cannot be empty")
+	}
+
+	// Check for invalid characters and patterns
+	invalidPatterns := []struct {
+		pattern string
+		message string
+	}{
+		{".", "cannot start with a dot"},
+		{"..", "cannot contain '..'"},
+		{"~", "cannot contain '~'"},
+		{"^", "cannot contain '^'"},
+		{":", "cannot contain ':'"},
+		{"?", "cannot contain '?'"},
+		{"*", "cannot contain '*'"},
+		{"[", "cannot contain '['"},
+		{" ", "cannot contain spaces"},
+		{"@{", "cannot contain '@{'"},
+	}
+
+	// Check if starts with dot
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("branch name cannot start with a dot")
+	}
+
+	// Check if ends with .lock
+	if strings.HasSuffix(name, ".lock") {
+		return fmt.Errorf("branch name cannot end with '.lock'")
+	}
+
+	// Check for invalid patterns
+	for _, invalid := range invalidPatterns {
+		if strings.Contains(name, invalid.pattern) {
+			return fmt.Errorf("branch name %s", invalid.message)
+		}
+	}
+
+	// Check for control characters
+	for _, ch := range name {
+		if ch < 32 || ch == 127 {
+			return fmt.Errorf("branch name cannot contain control characters")
+		}
+	}
+
+	return nil
+}
+
 // Branch represents a git branch
 type Branch struct {
 	Name          string
@@ -68,6 +118,11 @@ func (r *Repository) BranchExistsOnRemote(remoteName, branchName string) (bool, 
 
 // CreateBranchOnRemote creates a branch on the specified remote from a source ref
 func (r *Repository) CreateBranchOnRemote(remoteName, branchName, sourceRef string) error {
+	// Validate branch name
+	if err := ValidateBranchName(branchName); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
 	// Push the source ref to the remote as the new branch
 	refSpec := fmt.Sprintf("%s:refs/heads/%s", sourceRef, branchName)
 	cmd := exec.Command("git", "push", remoteName, refSpec)

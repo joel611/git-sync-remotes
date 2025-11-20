@@ -53,6 +53,20 @@ type Model struct {
 	addRemoteName  string
 	addRemoteURL   string
 	addRemoteField int // 0 = name, 1 = url
+
+	// Branch selector
+	branches           []git.Branch
+	selectedBranchIdx  int
+	branchSearchQuery  string
+	branchSearchActive bool
+
+	// Branch creation
+	showBranchCreate bool
+	createBranchName string
+	createOnRemote   string // Which remote to create the branch on
+
+	// Branch info overlay
+	showBranchInfo bool
 }
 
 // NewModel creates a new TUI model
@@ -88,6 +102,22 @@ type syncCompleteMsg struct {
 type addRemoteCompleteMsg struct {
 	remote *git.Remote
 	err    error
+}
+
+type branchesLoadedMsg struct {
+	branches []git.Branch
+	err      error
+}
+
+type branchSwitchMsg struct {
+	branch string
+	err    error
+}
+
+type branchCreateMsg struct {
+	branchName string
+	remoteName string
+	err        error
 }
 
 // Init initializes the model
@@ -171,6 +201,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addRemoteName = ""
 		m.addRemoteURL = ""
 		return m, nil
+
+	case branchesLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.message = fmt.Sprintf("Failed to load branches: %v", msg.err)
+			m.showBranches = false
+			return m, nil
+		}
+		m.branches = msg.branches
+		m.selectedBranchIdx = 0
+		// Find current branch in the list
+		for i, branch := range m.branches {
+			if branch.Name == m.currentBranch {
+				m.selectedBranchIdx = i
+				break
+			}
+		}
+		return m, nil
+
+	case branchSwitchMsg:
+		m.loading = false
+		m.showBranches = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.message = fmt.Sprintf("Failed to switch branch: %v", msg.err)
+			return m, nil
+		}
+		m.currentBranch = msg.branch
+		m.message = fmt.Sprintf("Switched to branch '%s'. Press 'f' to fetch.", msg.branch)
+		// Reset state for new branch
+		m.compareResult = nil
+		m.selectedIndex = 0
+		return m, nil
+
+	case branchCreateMsg:
+		m.loading = false
+		m.showBranchCreate = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.message = fmt.Sprintf("Failed to create branch: %v", msg.err)
+			return m, nil
+		}
+		m.message = fmt.Sprintf("Branch '%s' created on %s. Press 'b' to refresh branches.", msg.branchName, msg.remoteName)
+		// Refresh branches after creation
+		return m, loadBranches(m.repo, m.remote1.Name, m.remote2.Name)
 	}
 
 	return m, nil
@@ -229,6 +305,130 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.showBranchCreate {
+		switch msg.String() {
+		case "y", "Y":
+			m.showBranchCreate = false
+			m.loading = true
+			// Determine source ref - use the remote that HAS the branch
+			var sourceRef string
+			if m.selectedBranchIdx < len(m.branches) {
+				selectedBranch := m.branches[m.selectedBranchIdx]
+				if selectedBranch.ExistsRemote1 {
+					sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, selectedBranch.Name)
+				} else if selectedBranch.ExistsRemote2 {
+					sourceRef = fmt.Sprintf("%s/%s", m.remote2.Name, selectedBranch.Name)
+				} else {
+					// Branch doesn't exist on either remote - use current branch as source
+					sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, m.currentBranch)
+				}
+			} else {
+				// Fallback to current branch
+				sourceRef = fmt.Sprintf("%s/%s", m.remote1.Name, m.currentBranch)
+			}
+			return m, createBranch(m.repo, m.createOnRemote, m.createBranchName, sourceRef)
+		case "n", "N", "esc":
+			m.showBranchCreate = false
+		}
+		return m, nil
+	}
+
+	if m.showBranches {
+		// Handle branch search mode
+		if m.branchSearchActive {
+			switch msg.String() {
+			case "esc":
+				m.branchSearchActive = false
+				m.branchSearchQuery = ""
+				return m, nil
+			case "enter":
+				m.branchSearchActive = false
+				return m, nil
+			case "backspace":
+				if len(m.branchSearchQuery) > 0 {
+					m.branchSearchQuery = m.branchSearchQuery[:len(m.branchSearchQuery)-1]
+				}
+				return m, nil
+			default:
+				if len(msg.String()) == 1 {
+					m.branchSearchQuery += msg.String()
+				}
+				return m, nil
+			}
+		}
+
+		// Handle branch selector navigation
+		switch msg.String() {
+		case "esc":
+			m.showBranches = false
+			m.branchSearchQuery = ""
+			return m, nil
+		case "j", "down":
+			if m.selectedBranchIdx < len(m.branches)-1 {
+				m.selectedBranchIdx++
+			}
+			return m, nil
+		case "k", "up":
+			if m.selectedBranchIdx > 0 {
+				m.selectedBranchIdx--
+			}
+			return m, nil
+		case "enter":
+			// Switch to selected branch
+			if m.selectedBranchIdx < len(m.branches) {
+				selectedBranch := m.branches[m.selectedBranchIdx]
+				if selectedBranch.Name != m.currentBranch {
+					m.loading = true
+					return m, switchBranch(m.repo, selectedBranch.Name, m.remote1.Name, m.remote2.Name)
+				} else {
+					m.showBranches = false
+					m.message = "Already on this branch"
+				}
+			}
+			return m, nil
+		case "/":
+			m.branchSearchActive = true
+			return m, nil
+		case "r":
+			// Refresh branches
+			m.loading = true
+			return m, loadBranches(m.repo, m.remote1.Name, m.remote2.Name)
+		case "c":
+			// Create branch on missing remote
+			if m.selectedBranchIdx < len(m.branches) {
+				selectedBranch := m.branches[m.selectedBranchIdx]
+				// Check if branch is missing on one remote
+				if !selectedBranch.ExistsRemote1 && selectedBranch.ExistsRemote2 {
+					// Branch missing on remote1
+					m.createBranchName = selectedBranch.Name
+					m.createOnRemote = m.remote1.Name
+					m.showBranchCreate = true
+				} else if selectedBranch.ExistsRemote1 && !selectedBranch.ExistsRemote2 {
+					// Branch missing on remote2
+					m.createBranchName = selectedBranch.Name
+					m.createOnRemote = m.remote2.Name
+					m.showBranchCreate = true
+				} else {
+					m.message = "Branch exists on both remotes or neither remote"
+				}
+			}
+			return m, nil
+		case "i":
+			// Show branch info
+			if m.selectedBranchIdx < len(m.branches) {
+				m.showBranchInfo = true
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
+	if m.showBranchInfo {
+		// Close info overlay with any key
+		m.showBranchInfo = false
+		return m, nil
+	}
+
 	if m.showSyncDialog {
 		switch msg.String() {
 		case "y", "Y":
@@ -258,6 +458,17 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.addRemoteField = 0
 		} else {
 			m.message = "Already have 2 remotes configured"
+		}
+		return m, nil
+
+	case "b":
+		// Open branch selector (only if we have 2 remotes)
+		if m.remote2 != nil && !m.loading {
+			m.showBranches = true
+			m.loading = true
+			return m, loadBranches(m.repo, m.remote1.Name, m.remote2.Name)
+		} else if m.remote2 == nil {
+			m.message = "Need 2 remotes for branch management. Press 'a' to add a second remote."
 		}
 		return m, nil
 
@@ -320,6 +531,21 @@ func (m Model) View() string {
 	// Show add remote dialog if active
 	if m.showAddRemote {
 		return m.renderAddRemoteDialog()
+	}
+
+	// Show branch selector if active
+	if m.showBranches {
+		return m.renderBranchSelector()
+	}
+
+	// Show branch creation dialog if active
+	if m.showBranchCreate {
+		return m.renderBranchCreationDialog()
+	}
+
+	// Show branch info overlay if active
+	if m.showBranchInfo {
+		return m.renderBranchInfo()
 	}
 
 	// Show sync dialog if active
@@ -405,6 +631,9 @@ func (m Model) renderCommitList(remoteName string, commits []git.Commit, focused
 		style = style.BorderForeground(lipgloss.Color("205"))
 	}
 
+	// Color for commits unique to this remote
+	commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")) // Light blue
+
 	var lines []string
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("COMMITS (%s)", remoteName)))
 	lines = append(lines, "")
@@ -414,10 +643,20 @@ func (m Model) renderCommitList(remoteName string, commits []git.Commit, focused
 	} else {
 		for i, commit := range commits {
 			prefix := "  "
+			selector := ""
 			if focused && i == m.selectedIndex {
-				prefix = "> "
+				prefix = ""
+				selector = "> "
 			}
-			lines = append(lines, fmt.Sprintf("%s%s %s", prefix, commit.ShortSHA, commit.Message))
+
+			// Format commit line with color
+			commitLine := fmt.Sprintf("%s %s", commit.ShortSHA, commit.Message)
+			if len(commits) > 0 {
+				// Commits in this list are unique to this remote, so color them
+				commitLine = commitStyle.Render(commitLine)
+			}
+
+			lines = append(lines, fmt.Sprintf("%s%s%s", prefix, selector, commitLine))
 		}
 	}
 
@@ -457,8 +696,13 @@ Keyboard Shortcuts:
 
   Actions:
     a           Add remote (when only 1 remote exists)
+    b           Branch selector (switch/manage branches)
     f           Fetch from remotes
     s           Sync commits
+
+  Branch Management (in branch selector):
+    c           Create branch on missing remote
+    i           Show branch information
 
   Other:
     ?           Toggle this help
@@ -560,6 +804,172 @@ Press Esc to cancel
 		dialogStyle.Render(dialog))
 }
 
+// renderBranchSelector renders the branch selector dialog
+func (m Model) renderBranchSelector() string {
+	dialogStyle := lipgloss.NewStyle().
+		Padding(2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205"))
+
+	if m.loading {
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			dialogStyle.Render("Loading branches..."))
+	}
+
+	var lines []string
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Render("Select Branch"))
+	lines = append(lines, "")
+
+	// Filter branches if search is active
+	visibleBranches := m.branches
+	if m.branchSearchQuery != "" {
+		filtered := []git.Branch{}
+		for _, branch := range m.branches {
+			if strings.Contains(strings.ToLower(branch.Name), strings.ToLower(m.branchSearchQuery)) {
+				filtered = append(filtered, branch)
+			}
+		}
+		visibleBranches = filtered
+	}
+
+	if len(visibleBranches) == 0 {
+		lines = append(lines, "  No branches found")
+	} else {
+		// Show branches with indicators
+		for i, branch := range visibleBranches {
+			prefix := "  "
+			if i == m.selectedBranchIdx {
+				prefix = "> "
+			}
+
+			// Add indicators for remote existence
+			indicators := ""
+			if branch.ExistsRemote1 && branch.ExistsRemote2 {
+				indicators = " [both]"
+			} else if branch.ExistsRemote1 {
+				indicators = " [remote1]"
+			} else if branch.ExistsRemote2 {
+				indicators = " [remote2]"
+			}
+
+			// Highlight current branch
+			branchText := branch.Name + indicators
+			if branch.Name == m.currentBranch {
+				branchText = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("* " + branchText)
+			}
+
+			lines = append(lines, prefix+branchText)
+		}
+	}
+
+	lines = append(lines, "")
+	if m.branchSearchActive {
+		lines = append(lines, fmt.Sprintf("Search: %s_", m.branchSearchQuery))
+		lines = append(lines, "Press Esc to exit search")
+	} else if m.branchSearchQuery != "" {
+		lines = append(lines, fmt.Sprintf("Filter: %s (Press / to search again)", m.branchSearchQuery))
+	} else {
+		lines = append(lines, "↑/↓/j/k: Navigate  Enter: Switch  c: Create  i: Info  /: Search  r: Refresh  Esc: Close")
+	}
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		dialogStyle.Render(strings.Join(lines, "\n")))
+}
+
+// renderBranchCreationDialog renders the branch creation confirmation dialog
+func (m Model) renderBranchCreationDialog() string {
+	dialogStyle := lipgloss.NewStyle().
+		Padding(2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205"))
+
+	dialog := fmt.Sprintf(`
+Create Branch
+
+Branch: %s
+Remote: %s
+
+This will create the branch on %s from the existing branch on the other remote.
+
+Continue? [y/n]
+`, m.createBranchName, m.createOnRemote, m.createOnRemote)
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		dialogStyle.Render(dialog))
+}
+
+// renderBranchInfo renders the branch info overlay
+func (m Model) renderBranchInfo() string {
+	dialogStyle := lipgloss.NewStyle().
+		Padding(2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205"))
+
+	if m.selectedBranchIdx >= len(m.branches) {
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			dialogStyle.Render("No branch selected"))
+	}
+
+	selectedBranch := m.branches[m.selectedBranchIdx]
+
+	var infoLines []string
+	infoLines = append(infoLines, lipgloss.NewStyle().Bold(true).Render("Branch Information"))
+	infoLines = append(infoLines, "")
+	infoLines = append(infoLines, fmt.Sprintf("Name: %s", selectedBranch.Name))
+	infoLines = append(infoLines, "")
+	infoLines = append(infoLines, "Availability:")
+
+	// Show which remotes have this branch
+	remote1Status := "✗ Not found"
+	if selectedBranch.ExistsRemote1 {
+		remote1Status = "✓ Available"
+	}
+	remote2Status := "✗ Not found"
+	if selectedBranch.ExistsRemote2 {
+		remote2Status = "✓ Available"
+	}
+
+	infoLines = append(infoLines, fmt.Sprintf("  %s: %s", m.remote1.Name, remote1Status))
+	infoLines = append(infoLines, fmt.Sprintf("  %s: %s", m.remote2.Name, remote2Status))
+	infoLines = append(infoLines, "")
+
+	// Show sync status if branch exists on both remotes
+	if selectedBranch.ExistsRemote1 && selectedBranch.ExistsRemote2 {
+		if selectedBranch.Name == m.currentBranch && m.compareResult != nil {
+			statusLine := "Status: "
+			switch m.compareResult.Status {
+			case git.InSync:
+				statusLine += "In sync ✓"
+			case git.Remote1Ahead:
+				statusLine += fmt.Sprintf("%s ahead by %d commits", m.remote1.Name, m.compareResult.Remote1Ahead)
+			case git.Remote2Ahead:
+				statusLine += fmt.Sprintf("%s ahead by %d commits", m.remote2.Name, m.compareResult.Remote2Ahead)
+			case git.Diverged:
+				statusLine += "Diverged (manual merge required)"
+			}
+			infoLines = append(infoLines, statusLine)
+		} else {
+			infoLines = append(infoLines, "Status: Switch to this branch to see sync status")
+		}
+	} else if selectedBranch.ExistsRemote1 || selectedBranch.ExistsRemote2 {
+		infoLines = append(infoLines, "Status: Branch only exists on one remote")
+		infoLines = append(infoLines, "Press 'c' to create on the other remote")
+	} else {
+		infoLines = append(infoLines, "Status: Branch doesn't exist on either remote")
+	}
+
+	infoLines = append(infoLines, "")
+	infoLines = append(infoLines, "Press any key to close")
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		dialogStyle.Render(strings.Join(infoLines, "\n")))
+}
+
 // Command functions for async operations
 
 func fetchRemotes(repo *git.Repository, remote1, remote2 string) tea.Cmd {
@@ -613,6 +1023,33 @@ func addRemote(repo *git.Repository, name, url string) tea.Cmd {
 		return addRemoteCompleteMsg{
 			remote: &git.Remote{Name: name, URL: remoteURL},
 			err:    nil,
+		}
+	}
+}
+
+func loadBranches(repo *git.Repository, remote1, remote2 string) tea.Cmd {
+	return func() tea.Msg {
+		branches, err := repo.ListAllBranches(remote1, remote2)
+		return branchesLoadedMsg{branches: branches, err: err}
+	}
+}
+
+func switchBranch(repo *git.Repository, branch, remote1, remote2 string) tea.Cmd {
+	return func() tea.Msg {
+		// Note: We don't actually checkout the branch locally
+		// We just change which branch we're viewing for comparison
+		// This is intentional - the tool works with remote refs only
+		return branchSwitchMsg{branch: branch, err: nil}
+	}
+}
+
+func createBranch(repo *git.Repository, remoteName, branchName, sourceRef string) tea.Cmd {
+	return func() tea.Msg {
+		err := repo.CreateBranchOnRemote(remoteName, branchName, sourceRef)
+		return branchCreateMsg{
+			branchName: branchName,
+			remoteName: remoteName,
+			err:        err,
 		}
 	}
 }
