@@ -113,14 +113,14 @@
 - [ ] 12.8 Test CLI mode against bash script test cases
 
 ## 13. Build and Distribution
-- [ ] 13.1 Create Makefile with cross-platform build targets (Linux, macOS, Windows)
+- [x] 13.1 Create Makefile with cross-platform build targets (Linux, macOS, Windows)
 - [ ] 13.2 Test binary on Linux x86_64
 - [ ] 13.3 Test binary on macOS (Intel and ARM)
 - [ ] 13.4 Test binary on Windows/WSL
 - [ ] 13.5 Create install script to download and install TUI binary
 - [ ] 13.6 Update main install.sh to optionally install TUI binary
 - [ ] 13.7 Set up GitHub Actions for automated builds (optional for MVP)
-- [ ] 13.8 Create release artifacts (tar.gz, checksums)
+- [x] 13.8 Create release artifacts (tar.gz, checksums)
 
 ## 14. Documentation
 - [ ] 14.1 Update README.md with TUI installation instructions
